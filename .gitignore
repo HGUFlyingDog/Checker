@@ -1,5 +1,6 @@
 .idea/
 .render_output/
 .venv/
-*.md
 render_output/
+*.md
+!README.md
