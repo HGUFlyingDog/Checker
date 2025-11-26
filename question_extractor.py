@@ -1,10 +1,12 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
-import os
 import re
-import markdown
+import os
 import json
 from tkhtmlview import HTMLLabel
+import markdown
+from PIL import Image, ImageTk
+import datetime
 
 # 添加DPI感知支持，适应高分辨率屏幕和缩放倍率
 try:
@@ -129,6 +131,7 @@ class QuestionExtractor:
         tk.Button(self.toolbar, text="自动修复选项格式", command=self.fix_all_question_formats, **self.font_config).pack(side=tk.LEFT, padx=5)
         tk.Button(self.toolbar, text="导出不带引用部分", command=self.export_without_quotes, **self.font_config).pack(side=tk.LEFT, padx=5)
         tk.Button(self.toolbar, text="导出带引用部分", command=self.export_with_quotes, **self.font_config).pack(side=tk.LEFT, padx=5)
+        tk.Button(self.toolbar, text="保存文件", command=self.save_file_with_timestamp, **self.font_config).pack(side=tk.LEFT, padx=5)
         print("[调试] 工具栏按钮创建成功")
         
         # 文件信息标签
@@ -199,9 +202,22 @@ class QuestionExtractor:
         content_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         print("[调试] 内容显示区域创建成功")
         
-        # 不带引用部分
-        no_quote_frame = tk.LabelFrame(content_frame, text="不带引用部分", **self.font_config)
-        no_quote_frame.pack(fill=tk.BOTH, expand=True, side=tk.LEFT, padx=5)
+        # 左侧主面板容器
+        left_panel = tk.Frame(content_frame)
+        left_panel.pack(fill=tk.BOTH, expand=True, side=tk.LEFT, padx=5)
+        
+        # 右侧图片显示面板
+        image_frame = tk.LabelFrame(content_frame, text="图片显示", **self.font_config)
+        image_frame.pack(fill=tk.BOTH, expand=True, side=tk.LEFT, padx=5)
+        
+        # 图片显示标签
+        self.image_label = tk.Label(image_frame, text="图片将在此处显示", **self.font_config, relief=tk.SUNKEN)
+        self.image_label.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        print("[调试] 图片显示面板创建成功")
+        
+        # 不带引用部分（左侧上方）
+        no_quote_frame = tk.LabelFrame(left_panel, text="不带引用部分", **self.font_config)
+        no_quote_frame.pack(fill=tk.BOTH, expand=True, side=tk.TOP, padx=5, pady=5)
         
         # 创建文本视图
         self.no_quote_text_frame = tk.Frame(no_quote_frame)
@@ -219,9 +235,9 @@ class QuestionExtractor:
         self.no_quote_html_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         print("[调试] 不带引用部分视图创建成功")
         
-        # 带引用部分
-        quote_frame = tk.LabelFrame(content_frame, text="带引用部分", **self.font_config)
-        quote_frame.pack(fill=tk.BOTH, expand=True, side=tk.LEFT, padx=5)
+        # 带引用部分（左侧下方）
+        quote_frame = tk.LabelFrame(left_panel, text="带引用部分", **self.font_config)
+        quote_frame.pack(fill=tk.BOTH, expand=True, side=tk.TOP, padx=5, pady=5)
         
         # 创建文本视图
         self.quote_text_frame = tk.Frame(quote_frame)
@@ -248,6 +264,15 @@ class QuestionExtractor:
         self.root.bind('<KeyPress-f>', lambda event: self.fix_current_question_format())
         print("[调试] f键快捷键绑定为修复当前题目")
         
+        # 绑定Ctrl+S快捷键用于保存文件
+        self.root.bind('<Control-s>', lambda event: self.save_file_with_timestamp())
+        print("[调试] Ctrl+S快捷键绑定为保存文件")
+        
+        # 绑定Q和E键用于图片导航
+        self.root.bind('<KeyPress-q>', lambda event: self.navigate_to_prev_image())
+        self.root.bind('<KeyPress-e>', lambda event: self.navigate_to_next_image())
+        print("[调试] Q键绑定为上一张图片，E键绑定为下一张图片")
+        
         # 绑定方向键左右控制上下一题
         self.root.bind('<Left>', lambda event: self.prev_question())
         self.root.bind('<Right>', lambda event: self.next_question())
@@ -258,6 +283,10 @@ class QuestionExtractor:
                                          command=self.toggle_dark_mode, **self.font_config)
         self.theme_toggle.pack(side=tk.RIGHT, padx=5)
         print("[调试] 夜间模式切换按钮添加成功")
+        
+        # 添加加载图片按钮
+        tk.Button(self.toolbar, text="加载图片", command=self.load_image, **self.font_config).pack(side=tk.RIGHT, padx=5)
+        print("[调试] 加载图片按钮添加成功")
     
     def select_file(self):
         filename = filedialog.askopenfilename(
@@ -271,6 +300,169 @@ class QuestionExtractor:
             # 选择文件后自动提取题目
             print(f"[调试] 自动开始提取题目")
             self.extract_questions()
+    
+    def load_image(self):
+        """加载并显示图片"""
+        print("[调试] 打开图片选择对话框")
+        file_types = [
+            ("所有图片文件", "*.png *.jpg *.jpeg *.gif *.bmp *.tiff *.webp"),
+            ("PNG文件", "*.png"),
+            ("JPEG文件", "*.jpg *.jpeg"),
+            ("GIF文件", "*.gif"),
+            ("BMP文件", "*.bmp"),
+        ]
+        
+        filename = filedialog.askopenfilename(
+            title="选择图片文件",
+            filetypes=file_types
+        )
+        
+        if filename:
+            try:
+                print(f"[调试] 加载图片: {filename}")
+                # 打开图片并调整大小以适应显示区域
+                image = Image.open(filename)
+                
+                # 获取显示区域的尺寸
+                width = self.image_label.winfo_width()
+                height = self.image_label.winfo_height()
+                
+                # 如果尺寸为0（尚未渲染），使用默认值
+                if width <= 1 or height <= 1:
+                    width, height = 400, 300
+                
+                # 计算图片缩放比例，保持宽高比
+                img_ratio = image.width / image.height
+                frame_ratio = width / height
+                
+                if img_ratio > frame_ratio:
+                    # 图片更宽，按宽度缩放
+                    new_width = width - 20  # 留出边距
+                    new_height = int(new_width / img_ratio)
+                else:
+                    # 图片更高，按高度缩放
+                    new_height = height - 20  # 留出边距
+                    new_width = int(new_height * img_ratio)
+                
+                # 调整图片大小
+                resized_image = image.resize((new_width, new_height), Image.LANCZOS)
+                
+                # 转换为Tkinter可用的格式
+                tk_image = ImageTk.PhotoImage(resized_image)
+                
+                # 保存图片引用，防止被垃圾回收
+                self.current_image = tk_image
+                
+                # 保存当前图片路径并获取同一文件夹中的所有图片
+                self.current_image_path = filename
+                self._load_folder_images(filename)
+                
+                # 更新标签显示图片
+                self.image_label.config(image=tk_image, text="")
+                
+                # 更新状态栏
+                self.status_bar.config(text=f"已加载图片: {os.path.basename(filename)}")
+                print(f"[调试] 图片加载成功: {os.path.basename(filename)}")
+                
+            except Exception as e:
+                messagebox.showerror("错误", f"无法加载图片: {str(e)}")
+                self.status_bar.config(text=f"加载图片失败: {str(e)}")
+                print(f"[调试] 图片加载失败: {str(e)}")
+                
+    def _load_folder_images(self, current_image_path):
+        """加载当前图片所在文件夹中的所有图片"""
+        try:
+            folder_path = os.path.dirname(current_image_path)
+            # 支持的图片扩展名
+            image_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp'}
+            
+            # 获取文件夹中所有图片文件
+            self.image_files = []
+            for file in os.listdir(folder_path):
+                if any(file.lower().endswith(ext) for ext in image_extensions):
+                    self.image_files.append(os.path.join(folder_path, file))
+            
+            # 排序以确保顺序一致
+            self.image_files.sort()
+            
+            # 找到当前图片在列表中的索引
+            self.current_image_index = self.image_files.index(current_image_path)
+            
+            print(f"[调试] 加载了{len(self.image_files)}张图片，当前是第{self.current_image_index + 1}张")
+            
+        except Exception as e:
+            print(f"[调试] 加载文件夹图片失败: {str(e)}")
+            self.image_files = [current_image_path]
+            self.current_image_index = 0
+    
+    def navigate_to_next_image(self):
+        """导航到下一张图片（E键）"""
+        if not self.image_files:
+            return
+        
+        # 循环到第一张
+        self.current_image_index = (self.current_image_index + 1) % len(self.image_files)
+        self._load_image_by_path(self.image_files[self.current_image_index])
+    
+    def navigate_to_prev_image(self):
+        """导航到上一张图片（Q键）"""
+        if not self.image_files:
+            return
+        
+        # 循环到最后一张
+        self.current_image_index = (self.current_image_index - 1) % len(self.image_files)
+        self._load_image_by_path(self.image_files[self.current_image_index])
+    
+    def _load_image_by_path(self, file_path):
+        """根据文件路径加载图片"""
+        try:
+            print(f"[调试] 导航加载图片: {os.path.basename(file_path)}")
+            
+            # 打开图片并调整大小以适应显示区域
+            image = Image.open(file_path)
+            
+            # 获取显示区域的尺寸
+            width = self.image_label.winfo_width()
+            height = self.image_label.winfo_height()
+            
+            # 如果尺寸为0（尚未渲染），使用默认值
+            if width <= 1 or height <= 1:
+                width, height = 400, 300
+            
+            # 计算图片缩放比例，保持宽高比
+            img_ratio = image.width / image.height
+            frame_ratio = width / height
+            
+            if img_ratio > frame_ratio:
+                # 图片更宽，按宽度缩放
+                new_width = width - 20  # 留出边距
+                new_height = int(new_width / img_ratio)
+            else:
+                # 图片更高，按高度缩放
+                new_height = height - 20  # 留出边距
+                new_width = int(new_height * img_ratio)
+            
+            # 调整图片大小
+            resized_image = image.resize((new_width, new_height), Image.LANCZOS)
+            
+            # 转换为Tkinter可用的格式
+            tk_image = ImageTk.PhotoImage(resized_image)
+            
+            # 保存图片引用，防止被垃圾回收
+            self.current_image = tk_image
+            self.current_image_path = file_path
+            
+            # 更新标签显示图片
+            self.image_label.config(image=tk_image, text="")
+            
+            # 更新状态栏
+            self.status_bar.config(text=f"已加载图片: {os.path.basename(file_path)} ({self.current_image_index + 1}/{len(self.image_files)})")
+            print(f"[调试] 图片加载成功: {os.path.basename(file_path)} ({self.current_image_index + 1}/{len(self.image_files)})")
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"无法加载图片: {str(e)}")
+            self.status_bar.config(text=f"加载图片失败: {str(e)}")
+            print(f"[调试] 图片加载失败: {str(e)}")
     
     def toggle_dark_mode(self):
         """切换夜间模式，完善所有UI元素的颜色设置"""
@@ -325,6 +517,15 @@ class QuestionExtractor:
         
         # 更新内容区域颜色
         self.content_frame.config(bg=colors['bg'])
+        
+        # 更新左侧面板颜色
+        if hasattr(self, 'left_panel'):
+            self.left_panel.config(bg=colors['bg'])
+        
+        # 更新图片显示面板颜色
+        if hasattr(self, 'image_frame'):
+            self.image_frame.config(bg=colors['bg'], fg=colors['fg'])
+            self.image_label.config(bg=colors['frame_bg'], fg=colors['fg'])
         
         # 更新标签框架颜色和文本颜色
         self.no_quote_frame.config(bg=colors['bg'], fg=colors['fg'])
@@ -513,26 +714,41 @@ class QuestionExtractor:
         return '非标准格式', f'选项数量为{len(options)}，不符合标准的判断题（2个选项）或选择题（4个选项）格式'
     
     def fix_current_question_format(self):
-        """修复当前题目的选项格式（F键触发）"""
+        """修复当前题目的选项格式（F键触发）- 只处理不带引用部分"""
         if not self.questions:
             self.status_bar.config(text="没有加载的题目")
             print("[调试] 没有加载的题目")
             return
         
-        print("[调试] 开始修复当前题目的选项格式")
+        print("[调试] 开始修复当前题目的选项格式 - 只处理不带引用部分")
         current_question = self.questions[self.current_question_index]
         
-        # 修复原始内容
+        # 获取原始内容
         original_content = current_question['original']
-        fixed_original, modified = self.fix_option_format(original_content)
+        
+        # 提取不带引用的部分
+        without_quotes = self.extract_without_quotes(original_content)
+        
+        # 只修复不带引用部分的选项格式
+        fixed_without_quotes, modified = self.fix_option_format(without_quotes)
         
         if modified:
+            # 提取带引用的部分（保持不变）
+            with_quotes = self.extract_with_quotes(original_content)
+            
+            # 重新组合内容：不带引用部分 + 带引用部分（如果有）
+            new_original_content = fixed_without_quotes
+            if with_quotes:
+                # 为带引用部分添加换行和>符号
+                quoted_lines = [f"> {line}" for line in with_quotes.split('\n')]
+                new_original_content += '\n\n' + '\n'.join(quoted_lines)
+            
             # 更新题目内容
-            self.questions[self.current_question_index]['original'] = fixed_original
+            self.questions[self.current_question_index]['original'] = new_original_content
             
             # 重新提取不带引用和带引用的部分
-            self.questions[self.current_question_index]['without_quotes'] = self.extract_without_quotes(fixed_original)
-            self.questions[self.current_question_index]['with_quotes'] = self.extract_with_quotes(fixed_original)
+            self.questions[self.current_question_index]['without_quotes'] = fixed_without_quotes
+            self.questions[self.current_question_index]['with_quotes'] = with_quotes
             
             # 重新分析选项类型
             option_type, error_reason = self.analyze_option_type(self.questions[self.current_question_index]['with_quotes'])
@@ -543,8 +759,8 @@ class QuestionExtractor:
             self.display_current_question()
             
             # 更新状态栏
-            self.status_bar.config(text=f"成功修复第{self.current_question_index + 1}题的选项格式")
-            print(f"[调试] 第{self.current_question_index + 1}题选项格式已修复")
+            self.status_bar.config(text=f"成功修复第{self.current_question_index + 1}题的选项格式（仅不带引用部分）")
+            print(f"[调试] 第{self.current_question_index + 1}题选项格式已修复（仅不带引用部分）")
         else:
             self.status_bar.config(text=f"第{self.current_question_index + 1}题无需修复")
             print(f"[调试] 第{self.current_question_index + 1}题无需修复")
@@ -1057,6 +1273,43 @@ class QuestionExtractor:
                 messagebox.showinfo("成功", "带引用部分已导出")
             except Exception as e:
                 messagebox.showerror("错误", f"导出失败: {str(e)}")
+    
+    def save_file_with_timestamp(self):
+        """保存当前处理后的文件，不覆盖原文件，添加时间戳后缀"""
+        if not self.file_path:
+            messagebox.showerror("错误", "请先选择文件")
+            return
+        
+        if not self.questions:
+            messagebox.showerror("错误", "请先提取题目")
+            return
+        
+        try:
+            # 获取原文件信息
+            file_dir, file_name = os.path.split(self.file_path)
+            file_base, file_ext = os.path.splitext(file_name)
+            
+            # 生成时间戳（格式：YYYYMMDD_HHMMSS）
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # 创建新文件名
+            new_filename = os.path.join(file_dir, f"{file_base}_{timestamp}{file_ext}")
+            
+            # 保存所有题目
+            with open(new_filename, 'w', encoding='utf-8') as f:
+                for i, question in enumerate(self.questions):
+                    # 保存完整的题目内容（包括不带引用和带引用部分）
+                    f.write(question['original'])
+                    # 在题目之间添加分隔符
+                    if i < len(self.questions) - 1:
+                        f.write('\n\n---\n\n')
+            
+            messagebox.showinfo("成功", f"文件已保存到:\n{new_filename}")
+            print(f"[调试] 文件保存成功: {new_filename}")
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"保存失败: {str(e)}")
+            print(f"[调试] 文件保存失败: {str(e)}")
     
     def switch_render_mode(self):
         """切换渲染模式（文本/HTML）"""
