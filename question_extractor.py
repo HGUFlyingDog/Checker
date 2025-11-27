@@ -132,6 +132,11 @@ class QuestionExtractor:
         tk.Button(self.toolbar, text="导出不带引用部分", command=self.export_without_quotes, **self.font_config).pack(side=tk.LEFT, padx=5)
         tk.Button(self.toolbar, text="导出带引用部分", command=self.export_with_quotes, **self.font_config).pack(side=tk.LEFT, padx=5)
         tk.Button(self.toolbar, text="保存文件", command=self.save_file_with_timestamp, **self.font_config).pack(side=tk.LEFT, padx=5)
+        
+        # 添加新功能按钮
+        tk.Button(self.toolbar, text="引用选项替换", command=self.replace_quote_options_without_quotes, **self.font_config).pack(side=tk.LEFT, padx=5)
+        tk.Button(self.toolbar, text="AI答案自动选择", command=self.auto_select_by_ai_answer, **self.font_config).pack(side=tk.LEFT, padx=5)
+        
         print("[调试] 工具栏按钮创建成功")
         
         # 文件信息标签
@@ -1506,6 +1511,103 @@ class QuestionExtractor:
         
         return result
     
+    def replace_quote_options_without_quotes(self):
+        """将引用部分的选项状态替换到不带引用部分的选项中"""
+        if 0 <= self.current_question_index < len(self.questions):
+            question = self.questions[self.current_question_index]
+            print(f"[调试] 开始替换第{question['index']}题的引用部分选项到无引用部分")
+            
+            # 获取带引用部分的题目内容
+            with_quotes_content = question['with_quotes']
+            # 获取不带引用部分的题目内容
+            without_quotes_content = question['without_quotes']
+            
+            # 查找引用块中的选项及其选中状态
+            quoted_options = {}
+            quote_pattern = r'>\s*-\s*\[([ x])\]\s*([A-D])\.?\s*'
+            for match in re.finditer(quote_pattern, with_quotes_content, re.MULTILINE):
+                status, option = match.group(1), match.group(2)
+                quoted_options[option] = status
+                print(f"[调试] 发现引用块中选项{option}，状态: [{status}]")
+            
+            # 将引用块中的选项状态应用到不带引用部分
+            new_without_quotes = without_quotes_content
+            for option, status in quoted_options.items():
+                # 查找不带引用部分的对应选项
+                option_pattern = r'^\s*-\s*\[([ x])\]\s*' + option + r'\.?\s*'
+                matches = list(re.finditer(option_pattern, new_without_quotes, re.MULTILINE))
+                if matches:
+                    match = matches[0]
+                    current_status = match.group(1)
+                    if current_status != status:
+                        old_str = match.group(0)
+                        new_str = old_str.replace(f'[{current_status}]', f'[{status}]')
+                        new_without_quotes = new_without_quotes.replace(old_str, new_str)
+                        print(f"[调试] 替换无引用部分选项{option}状态从[{current_status}]到[{status}]")
+                else:
+                    print(f"[调试] 在无引用部分未找到选项{option}")
+            
+            # 更新题目内容
+            question['without_quotes'] = new_without_quotes
+            print(f"[调试] 完成替换第{question['index']}题的引用部分选项到无引用部分")
+            
+            # 重新显示当前题目
+            self.display_current_question()
+            return True
+        return False
+    
+    def auto_select_by_ai_answer(self):
+        """根据AI答案自动选择选项"""
+        if 0 <= self.current_question_index < len(self.questions):
+            question = self.questions[self.current_question_index]
+            print(f"[调试] 开始从第{question['index']}题中提取AI答案并自动选择")
+            
+            # 从带引用和不带引用部分中查找AI答案
+            content = question['with_quotes']
+            
+            # 匹配AI答案格式，如 '> AI答案为A'、'> AI答案为B、C'、'> AI答案为 "A"' 等
+            ai_answer_pattern = r'>\s*AI答案为[:：]?\s*["']?([A-D]([,，]\s*[A-D])*)["']?\s*\.?\s*'
+            match = re.search(ai_answer_pattern, content)
+            
+            if match:
+                answer_text = match.group(1)
+                print(f"[调试] 提取到AI答案文本: {answer_text}")
+                
+                # 解析答案，支持多个答案（如A,B或A，B格式）
+                answers = []
+                for char in answer_text:
+                    if char.isalpha() and char.upper() in 'ABCD':
+                        answers.append(char.upper())
+                
+                print(f"[调试] 解析后的答案列表: {answers}")
+                
+                # 如果解析到答案，自动选择
+                if answers:
+                    # 清除之前的选中状态
+                    question['selected_options'] = []
+                    
+                    # 取消所有选项的选中状态
+                    for option in 'ABCD':
+                        question['with_quotes'] = self.update_question_content_with_selected(question['with_quotes'], option)
+                        question['without_quotes'] = self.update_question_content_with_selected(question['without_quotes'], option)
+                    
+                    # 选中解析出的答案选项
+                    for answer in answers:
+                        question['with_quotes'] = self.update_question_content_with_selected(question['with_quotes'], answer)
+                        question['without_quotes'] = self.update_question_content_with_selected(question['without_quotes'], answer)
+                        question['selected_options'].append(answer)
+                        print(f"[调试] 自动选中选项: {answer}")
+                    
+                    # 重新显示当前题目
+                    self.display_current_question()
+                    print(f"[调试] 完成第{question['index']}题的AI答案自动选择")
+                    return True
+                else:
+                    print(f"[调试] 未从'{answer_text}'中解析出有效答案")
+            else:
+                print(f"[调试] 未在题目中找到AI答案")
+        return False
+    
     def select_option(self, key):
         """根据按键选择对应选项"""
         option_map = {'1': 'A', '2': 'B', '3': 'C', '4': 'D'}
@@ -1616,9 +1718,9 @@ class QuestionExtractor:
     
     def run(self):
         print("[调试] 启动主循环")
-        # 自动加载公式测试文件
-        test_file = "test.md"  # 使用我们创建的测试文件
-        print(f"[调试] 自动加载公式测试文件: {test_file}")
+        # 自动加载我们的测试文件
+        test_file = "test_question_extractor.md"  # 使用我们创建的测试文件
+        print(f"[调试] 自动加载新功能测试文件: {test_file}")
         if os.path.exists(test_file):
             self.file_path = test_file
             # 读取文件内容并提取题目
@@ -1631,6 +1733,19 @@ class QuestionExtractor:
                 self.current_question_index = 0
                 self.display_current_question()
                 self.update_navigation_buttons()
+                
+                print("\n[调试] 开始测试新功能:")
+                print("[测试] 1. 测试引用选项替换功能:")
+                self.replace_quote_options_without_quotes()
+                
+                print("\n[测试] 2. 测试AI答案自动选择功能:")
+                self.auto_select_by_ai_answer()
+                
+                print("\n[测试] 3. 切换到第二题测试多选答案:")
+                if len(self.questions) > 1:
+                    self.current_question_index = 1
+                    self.display_current_question()
+                    self.auto_select_by_ai_answer()
         
         # 确保窗口获得焦点
         self.root.focus_set()
